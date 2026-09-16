@@ -16,7 +16,7 @@ export function emptyCargoRow(): CargoRow {
 export function exampleCargo(): CargoRow[] {
   return [
     {
-      id: newId(),
+      id: "ex-carton-a",
       name: "골판지 상자 A",
       length: 400,
       width: 300,
@@ -25,7 +25,7 @@ export function exampleCargo(): CargoRow[] {
       weightKg: 3.2,
     },
     {
-      id: newId(),
+      id: "ex-pallet",
       name: "팔레트 박스",
       length: 1100,
       width: 1100,
@@ -34,7 +34,7 @@ export function exampleCargo(): CargoRow[] {
       weightKg: 85,
     },
     {
-      id: newId(),
+      id: "ex-parts",
       name: "부품 상자",
       length: 600,
       width: 400,
