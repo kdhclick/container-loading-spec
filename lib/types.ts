@@ -81,9 +81,21 @@ export interface PackingPlan {
   totalWeightKg: number;
   packedWeightKg: number;
   payloadExceeded: boolean;
+  cargoVolumeMm3: number;
+  volumeExceeded: boolean;
+  volumeFitCount: number;
+  volumeOverflowCount: number;
+  volumeNote: string | null;
   layers: LayerNote[];
-  solver: "extreme-point" | "maximal-space";
+  solver: "extreme-point" | "maximal-space" | "grid";
+  keepUpright: boolean;
+  stackLayers: number;
+  stackHeightMm: number;
   createdAt: string;
+}
+
+export interface PackOptions {
+  keepUpright?: boolean;
 }
 
 export interface ValidationIssue {
@@ -91,4 +103,4 @@ export interface ValidationIssue {
   message: string;
 }
 
-export const MAX_PIECES = 240;
+export const LARGE_PACK_THRESHOLD = 400;

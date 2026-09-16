@@ -1,16 +1,14 @@
 const PALETTE = [
-  "#2563eb",
-  "#dc2626",
-  "#16a34a",
-  "#d97706",
-  "#7c3aed",
-  "#0891b2",
-  "#db2777",
-  "#4d7c0f",
-  "#ea580c",
-  "#4338ca",
-  "#0f766e",
-  "#be123c",
+  "#FFE7A3",
+  "#CDE8FF",
+  "#D8F5C8",
+  "#FFE0C2",
+  "#E4D7FF",
+  "#C8F4F0",
+  "#FFD6E0",
+  "#E8F2B8",
+  "#D6E4FF",
+  "#FFF1B8",
 ];
 
 export function colorForKey(key: string): string {

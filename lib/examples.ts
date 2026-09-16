@@ -44,3 +44,17 @@ export function exampleCargo(): CargoRow[] {
     },
   ];
 }
+
+export function defaultCarton(): CargoRow[] {
+  return [
+    {
+      id: "ex-carton-a",
+      name: "골판지 상자 A",
+      length: 395,
+      width: 295,
+      height: 185,
+      quantity: 1720,
+      weightKg: 3.2,
+    },
+  ];
+}

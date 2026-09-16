@@ -84,7 +84,7 @@ export function BoxEditor({
         </Alert>
       ) : (
         <>
-          <div className="hidden overflow-x-auto md:block">
+          <div className="hidden overflow-x-auto xl:block">
             <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted-foreground">
@@ -177,7 +177,7 @@ export function BoxEditor({
             </table>
           </div>
 
-          <div className="space-y-2 md:hidden">
+          <div className="space-y-2 xl:hidden">
             {rows.map((row, index) => (
               <div
                 key={row.id}

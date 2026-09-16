@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Loader2, Package } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BoxEditor } from "@/components/box-editor";
 import { ContainerPicker } from "@/components/container-picker";
 import { PackingViewer } from "@/components/packing-viewer";
@@ -10,14 +10,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getContainer } from "@/lib/containers";
-import { emptyCargoRow, exampleCargo } from "@/lib/examples";
-import { packCargo, validateCargo } from "@/lib/packing";
+import { defaultCarton, emptyCargoRow } from "@/lib/examples";
+import { estimateVolumeCapacity, validateCargo } from "@/lib/packing";
 import { downloadSpecPdf } from "@/lib/download-spec";
 import type { CargoRow, LengthUnit, PackingPlan, ValidationIssue } from "@/lib/types";
 
 export function LoadingPlanner() {
-  const [containerId, setContainerId] = useState("20ft-dry");
-  const [rows, setRows] = useState<CargoRow[]>(() => exampleCargo());
+  const [containerId, setContainerId] = useState("40ft-dry");
+  const [rows, setRows] = useState<CargoRow[]>(() => defaultCarton());
   const [unit, setUnit] = useState<LengthUnit>("mm");
   const [plan, setPlan] = useState<PackingPlan | null>(null);
   const [issues, setIssues] = useState<ValidationIssue[]>([]);
@@ -28,7 +28,12 @@ export function LoadingPlanner() {
   const [exportError, setExportError] = useState<string | null>(null);
 
   const container = useMemo(() => getContainer(containerId), [containerId]);
+  const volumeHint = useMemo(
+    () => estimateVolumeCapacity(rows, container),
+    [rows, container],
+  );
 
+  const PACK_LAYOUT_ID = "inside-row-40ft-v1";
   const solve = () => {
     const nextIssues = validateCargo(rows, container);
     setIssues(nextIssues);
@@ -39,14 +44,34 @@ export function LoadingPlanner() {
       return;
     }
     setSolving(true);
-    window.setTimeout(() => {
-      const next = packCargo(rows, container);
-      setPlan(next);
-      setStep(next.placed.length);
-      setSelectedId(null);
-      setSolving(false);
-    }, 30);
+    void fetch("/api/pack", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify({ rows, containerId }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error("pack failed");
+        return res.json();
+      })
+      .then((next: PackingPlan) => {
+        setPlan(next);
+        setStep(next.placed.length);
+        setSelectedId(null);
+      })
+      .catch(() => {
+        setExportError("적재 계산에 실패했습니다. 다시 눌러 주세요.");
+      })
+      .finally(() => {
+        setSolving(false);
+      });
   };
+
+  useEffect(() => {
+    solve();
+    // Re-run when layout rules change so Fast Refresh cannot keep an old plan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [containerId, PACK_LAYOUT_ID]);
 
   const exportPdf = async () => {
     if (!plan) return;
@@ -149,6 +174,12 @@ export function LoadingPlanner() {
                   setSelectedId(null);
                 }}
               />
+              {volumeHint.note ? (
+                <Alert>
+                  <AlertTitle>부피 초과</AlertTitle>
+                  <AlertDescription>{volumeHint.note} 계산은 가능한 수량만 넣습니다.</AlertDescription>
+                </Alert>
+              ) : null}
               {issues.length > 0 ? (
                 <Alert variant="destructive">
                   <AlertTitle>입력을 확인하세요</AlertTitle>

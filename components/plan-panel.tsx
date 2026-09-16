@@ -5,6 +5,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { colorForKey } from "@/lib/colors";
 import type { PackingPlan } from "@/lib/types";
 
 interface PlanPanelProps {
@@ -37,6 +38,9 @@ export function PlanPanel({ plan, selectedId, onSelect, step }: PlanPanelProps) 
           label="적재 개수"
           value={`${plan.packedPieces}/${plan.totalPieces}`}
         />
+        {plan.solver === "grid" ? (
+          <Stat label="좌우 배치" value="안쪽부터 295×5 + 395×2" />
+        ) : null}
         <Stat
           label="적재 중량"
           value={`${plan.packedWeightKg.toLocaleString("ko-KR", {
@@ -45,9 +49,23 @@ export function PlanPanel({ plan, selectedId, onSelect, step }: PlanPanelProps) 
         />
         <Stat
           label="솔버"
-          value={plan.solver === "extreme-point" ? "익스트림 포인트" : "최대잔여공간"}
+          value={
+            plan.solver === "extreme-point"
+              ? "익스트림 포인트"
+              : plan.solver === "grid"
+                ? "격자 적재"
+                : "최대잔여공간"
+          }
         />
       </div>
+
+      {plan.volumeExceeded && plan.volumeNote ? (
+        <Alert>
+          <AlertTriangle />
+          <AlertTitle>부피 초과</AlertTitle>
+          <AlertDescription>{plan.volumeNote}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {plan.payloadExceeded ? (
         <Alert variant="destructive">
@@ -65,8 +83,10 @@ export function PlanPanel({ plan, selectedId, onSelect, step }: PlanPanelProps) 
           <AlertTriangle />
           <AlertTitle>넣지 못한 화물</AlertTitle>
           <AlertDescription>
-            {plan.unpacked.map((u) => `${u.name} ${u.count}개`).join(", ")}. 치수를 줄이거나
-            컨테이너를 키워 보세요.
+            {plan.unpacked.map((u) => `${u.name} ${u.count}개`).join(", ")}.
+            {plan.volumeExceeded
+              ? " 부피가 넘치는 수량은 다른 컨테이너로 나누세요."
+              : " 치수를 줄이거나 컨테이너를 키워 보세요."}
           </AlertDescription>
         </Alert>
       ) : (
@@ -96,7 +116,7 @@ export function PlanPanel({ plan, selectedId, onSelect, step }: PlanPanelProps) 
                   >
                     <span
                       className="mt-0.5 size-2.5 shrink-0 rounded-sm"
-                      style={{ background: box.color }}
+                      style={{ background: colorForKey(box.cargoId) }}
                     />
                     <span className="min-w-0 flex-1">
                       <span className="font-medium">

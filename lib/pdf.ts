@@ -1,7 +1,8 @@
 import fontkit from "@pdf-lib/fontkit";
-import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { PDFDocument, rgb, type PDFFont, type PDFPage, type RGB } from "pdf-lib";
+import { colorForKey, hexToRgb } from "@/lib/colors";
 import { specFilename } from "@/lib/pdf-name";
-import type { PackingPlan } from "@/lib/types";
+import type { LayerNote, PackingPlan, PlacedBox } from "@/lib/types";
 
 export { specFilename };
 
@@ -234,6 +235,197 @@ class PdfWriter {
     });
     this.y -= 10;
   }
+
+  caption(text: string) {
+    this.ensure(16);
+    this.page.drawText(text, {
+      x: MARGIN,
+      y: this.y,
+      size: 9,
+      font: this.font,
+      color: TEXT,
+    });
+    this.y -= 14;
+  }
+
+  legend(items: Array<{ color: string; label: string }>) {
+    if (items.length === 0) return;
+    this.ensure(18);
+    let x = MARGIN;
+    for (const item of items) {
+      const width = 16 + this.font.widthOfTextAtSize(item.label, 8) + 14;
+      if (x + width > PAGE_W - MARGIN) {
+        this.y -= 14;
+        this.ensure(16);
+        x = MARGIN;
+      }
+      this.page.drawRectangle({
+        x,
+        y: this.y - 1,
+        width: 9,
+        height: 9,
+        color: pdfColor(item.color),
+        borderColor: rgb(0.2, 0.2, 0.22),
+        borderWidth: 0.4,
+      });
+      this.page.drawText(item.label, {
+        x: x + 12,
+        y: this.y,
+        size: 8,
+        font: this.font,
+        color: TEXT,
+      });
+      x += width;
+    }
+    this.y -= 18;
+  }
+}
+
+function pdfColor(hex: string): RGB {
+  const { r, g, b } = hexToRgb(hex);
+  return rgb(r / 255, g / 255, b / 255);
+}
+
+function unique<T>(items: T[], key: (item: T) => string): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const k = key(item);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+function boxesInLayer(boxes: PlacedBox[], layer: LayerNote): PlacedBox[] {
+  return boxes.filter((b) => Math.abs(b.y - layer.yMin) <= 25);
+}
+
+function layerSummary(boxes: PlacedBox[]): string {
+  if (boxes.length === 0) return "화물 없음";
+  const xs = [...new Set(boxes.map((b) => Math.round(b.x)))].sort((a, b) => a - b);
+  const zs = [...new Set(boxes.map((b) => Math.round(b.z)))].sort((a, b) => a - b);
+  const names = [...new Set(boxes.map((b) => b.name))];
+  const cols = xs.length;
+  const rows = zs.length;
+  const grid =
+    cols > 1 && rows > 1 && cols * rows === boxes.length
+      ? ` · ${cols}열 × ${rows}행`
+      : "";
+  return `${names.join(", ")} ${boxes.length.toLocaleString("ko-KR")}개${grid}`;
+}
+
+type ViewKind = "top" | "side" | "end";
+
+function project(box: PlacedBox, view: ViewKind): { u: number; v: number; du: number; dv: number } {
+  if (view === "top") return { u: box.x, v: box.z, du: box.dx, dv: box.dz };
+  if (view === "side") return { u: box.x, v: box.y, du: box.dx, dv: box.dy };
+  return { u: box.z, v: box.y, du: box.dz, dv: box.dy };
+}
+
+function drawOrthoView(
+  w: PdfWriter,
+  opts: {
+    title: string;
+    view: ViewKind;
+    boxes: PlacedBox[];
+    innerU: number;
+    innerV: number;
+    doorAtMaxU?: boolean;
+    maxHeight: number;
+    x?: number;
+    width?: number;
+  },
+) {
+  const left = opts.x ?? MARGIN;
+  const availW = opts.width ?? PAGE_W - MARGIN * 2;
+  const scale = Math.min(availW / opts.innerU, opts.maxHeight / opts.innerV);
+  const dw = opts.innerU * scale;
+  const dh = opts.innerV * scale;
+  const ox = left + (availW - dw) / 2;
+  const titleH = opts.title ? 12 : 0;
+  const needed = dh + titleH + 16;
+  w.ensure(needed);
+  const oy = w.y - titleH - dh - 4;
+
+  if (opts.title) {
+    w.page.drawText(opts.title, {
+      x: left,
+      y: w.y,
+      size: 8,
+      font: w.font,
+      color: MUTED,
+    });
+  }
+
+  w.page.drawRectangle({
+    x: ox,
+    y: oy,
+    width: dw,
+    height: dh,
+    color: rgb(0.97, 0.96, 0.94),
+    borderColor: rgb(0.25, 0.22, 0.2),
+    borderWidth: 1,
+  });
+
+  const drawn =
+    opts.view === "top"
+      ? unique(opts.boxes, (b) => `${b.x}|${b.z}|${b.dx}|${b.dz}|${colorForKey(b.cargoId)}`)
+      : opts.view === "side"
+        ? unique(opts.boxes, (b) => `${b.x}|${b.y}|${b.dx}|${b.dy}|${colorForKey(b.cargoId)}`)
+        : unique(opts.boxes, (b) => `${b.z}|${b.y}|${b.dz}|${b.dy}|${colorForKey(b.cargoId)}`);
+
+  const ordered = [...drawn].sort((a, b) => {
+    if (opts.view === "top") return a.y - b.y;
+    if (opts.view === "side") return a.z - b.z;
+    return a.x - b.x;
+  });
+
+  for (const box of ordered) {
+    const p = project(box, opts.view);
+    const x = ox + p.u * scale;
+    const y = oy + p.v * scale;
+    const bw = Math.max(0.6, p.du * scale - 0.35);
+    const bh = Math.max(0.6, p.dv * scale - 0.35);
+    w.page.drawRectangle({
+      x,
+      y,
+      width: bw,
+      height: bh,
+      color: pdfColor(colorForKey(box.cargoId)),
+      borderColor: rgb(0.12, 0.14, 0.18),
+      borderWidth: 0.85,
+      opacity: 0.92,
+    });
+  }
+
+  if (opts.doorAtMaxU) {
+    w.page.drawRectangle({
+      x: ox + dw - 3,
+      y: oy,
+      width: 3,
+      height: dh,
+      color: ACCENT,
+    });
+    const door = "도어";
+    w.page.drawText(door, {
+      x: ox + dw - w.font.widthOfTextAtSize(door, 7) - 2,
+      y: oy - 10,
+      size: 7,
+      font: w.font,
+      color: ACCENT,
+    });
+  }
+
+  const inside = "안쪽";
+  w.page.drawText(inside, {
+    x: ox,
+    y: oy - 10,
+    size: 7,
+    font: w.font,
+    color: MUTED,
+  });
+
+  w.y -= needed;
 }
 
 export async function buildSpecPdf(
@@ -275,8 +467,11 @@ export async function buildSpecPdf(
       "솔버",
       plan.solver === "extreme-point"
         ? "익스트림 포인트 (Extreme Point)"
-        : "최대잔여공간 (Maximal Space)",
+        : plan.solver === "grid"
+          ? "격자 적재 (동일 치수)"
+          : "최대잔여공간 (Maximal Space)",
     ],
+    ...(plan.volumeNote ? [["부피", plan.volumeNote] as [string, string]] : []),
   ]);
   w.y -= 4;
 
@@ -308,34 +503,72 @@ export async function buildSpecPdf(
     w.y -= 4;
   }
 
-  w.heading("4. 적재 순서 (선적 우선 · 하단부터)");
+  w.heading("4. 적재 도면");
   w.line(
-    "원점 (0,0,0)은 컨테이너 안쪽 좌측 하단(도어 반대편)입니다. X=길이, Y=높이, Z=너비. 순번 1이 가장 먼저 넣는 화물입니다.",
+    "안쪽이 왼쪽, 도어가 오른쪽입니다. 색은 화물 종류입니다. 좌표 목록 없이 도면으로 위치를 표시합니다.",
     8,
     MUTED,
   );
   w.y -= 4;
-  w.table(
-    ["순번", "품명", "위치 X,Y,Z (mm)", "치수 dx,dy,dz", "회전"],
-    plan.placed.map((b) => [
-      String(b.sequence),
-      `${b.name} #${b.pieceIndex}`,
-      `${fmt(b.x)}, ${fmt(b.y)}, ${fmt(b.z)}`,
-      `${fmt(b.dx)}×${fmt(b.dy)}×${fmt(b.dz)}`,
-      b.rotationLabel,
-    ]),
-    [36, 120, 140, 130, 85],
-  );
+  const legendItems = unique(plan.placed, (b) => b.cargoId).map((b) => {
+    const count = plan.placed.filter((p) => p.cargoId === b.cargoId).length;
+    return { color: colorForKey(b.cargoId), label: `${b.name} ${count.toLocaleString("ko-KR")}개` };
+  });
+  w.legend(legendItems);
 
-  w.heading("5. 층별 메모");
-  if (plan.layers.length === 0) {
+  drawOrthoView(w, {
+    title: "평면도 (위에서)  ·  가로=길이, 세로=너비",
+    view: "top",
+    boxes: plan.placed,
+    innerU: c.innerL,
+    innerV: c.innerW,
+    doorAtMaxU: true,
+    maxHeight: 168,
+  });
+  w.y -= 6;
+  drawOrthoView(w, {
+    title: "측면도 (옆에서)  ·  가로=길이, 세로=높이",
+    view: "side",
+    boxes: plan.placed,
+    innerU: c.innerL,
+    innerV: c.innerH,
+    doorAtMaxU: true,
+    maxHeight: 132,
+  });
+  w.y -= 6;
+  drawOrthoView(w, {
+    title: "정면도 (도어에서)  ·  가로=너비, 세로=높이",
+    view: "end",
+    boxes: plan.placed,
+    innerU: c.innerW,
+    innerV: c.innerH,
+    maxHeight: 132,
+  });
+  w.y -= 8;
+
+  w.heading("5. 층별 평면도");
+  w.line("아래층부터 쌓습니다. 각 그림은 그 층의 바닥을 위에서 본 모습입니다.", 8, MUTED);
+  w.y -= 4;
+  if (plan.layers.length === 0 || plan.placed.length === 0) {
     w.line("적재된 화물이 없습니다.");
   } else {
     for (const layer of plan.layers) {
-      w.line(`제${layer.layer}층  ${layer.note}`, 9);
+      const layerBoxes = boxesInLayer(plan.placed, layer);
+      w.caption(
+        `제${layer.layer}층  ·  바닥 ${fmt(layer.yMin)}–${fmt(layer.yMax)} mm  ·  ${layerSummary(layerBoxes)}`,
+      );
+      drawOrthoView(w, {
+        title: "",
+        view: "top",
+        boxes: layerBoxes,
+        innerU: c.innerL,
+        innerV: c.innerW,
+        doorAtMaxU: true,
+        maxHeight: 150,
+      });
+      w.y -= 6;
     }
   }
-  w.y -= 6;
 
   w.heading("6. 적재 시 유의사항");
   w.line("· 중량화물은 하단·안쪽에 두고, 도어 쪽은 가벼운 화물로 마감하세요.");

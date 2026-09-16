@@ -41,6 +41,64 @@ for (let i = 0; i < plan.placed.length; i += 1) {
 
 assert(plan.utilization > 0.05, `utilization too low: ${plan.utilization}`);
 assert(plan.layers.length > 0, "missing layer notes");
+assert(!plan.volumeExceeded, "example cargo should fit by volume");
+
+const manyIssues = validateCargo(
+  [
+    {
+      id: "many",
+      name: "골판지 상자",
+      length: 395,
+      width: 295,
+      height: 250,
+      quantity: 1720,
+      weightKg: 3,
+    },
+  ],
+  container,
+);
+assert(manyIssues.length === 0, `1720 qty should validate: ${manyIssues.map((i) => i.message).join(", ")}`);
+
+const overflow = packCargo(
+  [
+    {
+      id: "many",
+      name: "골판지 상자",
+      length: 395,
+      width: 295,
+      height: 250,
+      quantity: 1720,
+      weightKg: 3,
+    },
+  ],
+  container,
+);
+assert(overflow.volumeExceeded, "1720 cartons should flag volume overflow");
+assert(overflow.volumeNote != null, "volume overflow needs a separate note");
+assert(overflow.packedPieces > 200, `grid packer placed too few: ${overflow.packedPieces}`);
+assert(overflow.unpacked.length > 0, "overflow cartons should remain unpacked");
+for (const box of overflow.placed) {
+  assert(boxInContainer(box, container), `overflow box ${box.sequence} outside`);
+}
+
+const mixed = packCargo(
+  [
+    {
+      id: "mix",
+      name: "골판지 상자",
+      length: 395,
+      width: 295,
+      height: 185,
+      quantity: 1720,
+      weightKg: 3.2,
+    },
+  ],
+  container,
+);
+assert(mixed.packedPieces > 1176, `mixed leftover pack too weak: ${mixed.packedPieces}`);
+for (const box of mixed.placed) {
+  assert(boxInContainer(box, container), `mixed box ${box.sequence} outside`);
+}
 
 const cubes = [
   {
